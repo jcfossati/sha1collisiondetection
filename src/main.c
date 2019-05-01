@@ -8,9 +8,32 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#ifndef _WIN32
 #include <libgen.h>
+#endif
 
 #include "sha1.h"
+
+#ifdef _WIN32
+char* basename(char* path)
+{
+    char *base = NULL, *cur = NULL;
+
+    base = path;
+    cur = path;
+    while (0 != *cur)
+    {
+        if ('\\' == *cur)
+        {
+            base = cur + 1;
+        }
+        cur++;
+    }
+
+    return base;
+}
+#endif
 
 int main(int argc, char** argv)
 {
@@ -19,11 +42,11 @@ int main(int argc, char** argv)
 	char buffer[65536];
 	size_t size;
 	SHA1_CTX ctx2;
-	int i,j;
+	int i,j,foundcollision;
 
 	if (argc < 2)
 	{
-		printf("Usage: %s <file>\n", basename(argv[0]));
+		fprintf(stderr, "Usage: %s <file>\n", basename(argv[0]));
 		return 1;
 	}
 
@@ -37,10 +60,14 @@ int main(int argc, char** argv)
 			SHA1DCSetDetectReducedRoundCollision(&ctx2, 1);
 		}
 
-		fd = fopen(argv[i], "rb");
+		if(!strcmp(argv[i],"-")) {
+			fd = stdin;
+		} else {
+			fd = fopen(argv[i], "rb");
+		}
 		if (fd == NULL)
 		{
-			printf("cannot open file: %s\n", argv[i]);
+			fprintf(stderr, "cannot open file: %s: %s\n", argv[i], strerror(errno));
 			return 1;
 		}
 
@@ -53,23 +80,23 @@ int main(int argc, char** argv)
 		}
 		if (ferror(fd))
 		{
-			printf("error while reading file: %s\n", argv[i]);
+			fprintf(stderr, "error while reading file: %s: %s\n", argv[i], strerror(errno));
 			return 1;
 		}
 		if (!feof(fd))
 		{
-			printf("not end of file?: %s\n",argv[i]);
+			fprintf(stderr, "not end of file?: %s: %s\n", argv[i], strerror(errno));
 			return 1;
 		}
 
-		SHA1DCFinal(hash2,&ctx2);
+		foundcollision = SHA1DCFinal(hash2,&ctx2);
 
 		for (j = 0; j < 20; ++j)
 		{
 			sprintf(buffer+(j*2), "%02x", hash2[j]);
 		}
 		buffer[20*2] = 0;
-		if (ctx2.found_collision)
+		if (foundcollision)
 		{
 			printf("%s *coll* %s\n", buffer, argv[i]);
 		}
@@ -82,3 +109,7 @@ int main(int argc, char** argv)
 	}
 	return 0;
 }
+
+#ifdef _MSC_VER
+#pragma warning(disable : 4710 )    /* 4710 -- compiler complains about printf,sprintf not being inlined. */
+#endif
